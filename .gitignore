@@ -1,0 +1,23 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+.ipynb_checkpoints/
+
+.env
+.DS_Store
+
+# Dados
+data/raw/*
+data/interim/*
+data/processed/*
+
+# Modelos treinados
+models/*
+
+# Logs
+logs/
+*.log
+
+# VS Code
+.vscode/
