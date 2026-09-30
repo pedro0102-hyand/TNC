@@ -2,8 +2,7 @@ import pandas as pd
 from pathlib import Path
 
 # download do dataset
-DATASET_URL = ("hf://datasets/celsowm/bbc_news_ptbr/"
-    "data/train-00000-of-00001-97102f0adab65e78.parquet")
+DATASET_URL = pd.read_parquet("hf://datasets/celsowm/bbc_news_ptbr/data/train-00000-of-00001-97102f0adab65e78.parquet")
 
 # salvar o dataset em um arquivo local
 OUTPUT_PATH = Path("data/raw/bbc_news.parquet")
