@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 DATASET_PATH = "data/raw/bbc_news.parquet"
 
