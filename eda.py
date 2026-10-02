@@ -23,6 +23,7 @@ print(df.head(5))
 # Distribuição das classes
 print("Distribuição das classes:")
 counts = df["categoria"].value_counts()
+print(counts)
 dist = pd.DataFrame({"quantidade": counts, "percentual": counts / len(df) * 100}).round(1)
 print(dist)
 

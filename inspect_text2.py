@@ -5,23 +5,23 @@ import pandas as pd
 df = pd.read_parquet(Path("data/processed/unique_texts.parquet"))
 df["n_chars"] = df["texto"].str.len()
 
-# 1. Quantos textos abaixo de cada limite
+# Quantos textos abaixo de cada limite
 print("== Textos curtos ==")
 for limite in (1, 50, 100, 200, 300, 500, 1000):
     print(f"< {limite:>4} caracteres: {(df['n_chars'] < limite).sum()}")
 
-# 2. Páginas de erro
+# Páginas de erro
 erro = df["texto"].str.contains("Lo sentimos", regex=False)
 print(f"\nPáginas de erro ('Lo sentimos'): {erro.sum()}")
 
-# 3. Amostra de textos curtos (para escolher o limite)
+# Amostra de textos curtos (para escolher o limite)
 print("\n== Amostra entre 100 e 400 caracteres ==")
 faixa = df[df["n_chars"].between(100, 400)]
 amostra = faixa.sample(min(8, len(faixa)), random_state=42)
 for _, r in amostra.iterrows():
     print(f"{r['n_chars']:>4} | {r['titulo'][:50]} | {r['texto'][:150]!r}")
 
-# 4. Contexto dos espaços duplos
+# Contexto dos espaços duplos
 print("\n== Contexto dos espaços duplos ==")
 mostrados = 0
 for t in df["texto"].sample(200, random_state=1):
@@ -32,7 +32,7 @@ for t in df["texto"].sample(200, random_state=1):
     if mostrados == 8:
         break
 
-# 5. Palavras coladas (minúscula + Maiúscula + minúscula)
+# Palavras coladas (minúscula + Maiúscula + minúscula)
 cola = re.compile(r"[a-zà-ú][A-ZÀ-Ú][a-zà-ú]")
 pct = df["texto"].map(lambda t: bool(cola.search(t))).mean() * 100
 print(f"\nTextos com padrão minúscula+Maiúscula colado: {pct:.1f}%")

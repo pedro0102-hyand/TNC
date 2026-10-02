@@ -55,3 +55,5 @@ for col in ("titulo", "texto", "link"):
 datas = pd.to_datetime(df["data"])
 print(f"\nPeríodo: {datas.min().date()} -> {datas.max().date()}")
 
+
+
