@@ -1,7 +1,8 @@
 import pandas as pd
 from pathlib import Path
 
-DATA_PATH = Path("data/raw/bbc_news_ptbr.parquet")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_PATH = PROJECT_ROOT / "data/raw/bbc_news_ptbr.parquet"
 df = pd.read_parquet(DATA_PATH)
 
 # todas as linhas envolvidas em duplicacao

@@ -3,8 +3,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from transformers import AutoTokenizer
 
-DATA_PATH = Path("data/raw/bbc_news_ptbr.parquet")
-FIGURES_DIR = Path("reports/figures")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_PATH = PROJECT_ROOT / "data/raw/bbc_news_ptbr.parquet"
+FIGURES_DIR = PROJECT_ROOT / "reports/figures"
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_NAME = "neuralmind/bert-base-portuguese-cased"
 

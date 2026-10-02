@@ -1,8 +1,9 @@
 from pathlib import Path
 import pandas as pd
 
-RAW_PATH = Path("data/raw/bbc_news_ptbr.parquet")
-OUT_PATH = Path("data/processed/unique_texts.parquet")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RAW_PATH = PROJECT_ROOT / "data/raw/bbc_news_ptbr.parquet"
+OUT_PATH = PROJECT_ROOT / "data/processed/unique_texts.parquet"
 df = pd.read_parquet(RAW_PATH)
 
 # Agrupando por texto e agregando informações
