@@ -1,7 +1,7 @@
 from pathlib import Path
 import pandas as pd
 
-DATA_PATH = Path("data/processed/unique_texts.parquet")  # depois: clean_texts.parquet
+DATA_PATH = Path("data/processed/clean_texts.parquet") 
 
 df = pd.read_parquet(DATA_PATH)
 
