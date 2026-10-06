@@ -160,3 +160,8 @@ if args.smoke:
 if device.type == "mps":
     print(f"Memória reservada no mps: {torch.mps.driver_allocated_memory() / 1e9:.2f} GB")
 
+if not args.smoke:
+    trainer.save_model("models/bert")
+    tokenizer.save_pretrained("models/bert")
+    print("\nModelo salvo em models/bert")
+
