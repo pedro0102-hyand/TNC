@@ -21,3 +21,6 @@ logs/
 
 # VS Code
 .vscode/
+
+# models
+.models/
