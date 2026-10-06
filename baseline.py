@@ -113,16 +113,7 @@ for n, real, prevista in sorted(erros, reverse=True)[:8]:
 # Figura normalizada por linha (a diagonal é o recall de cada classe)
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 fig, ax = plt.subplots(figsize=(9, 8))
-ConfusionMatrixDisplay.from_predictions(
-    val["categoria"],
-    pred_val,
-    labels=classes,
-    normalize="true",
-    xticks_rotation=45,
-    values_format=".2f",
-    cmap="Blues",
-    ax=ax,
-)
+ConfusionMatrixDisplay.from_predictions(val["categoria"],pred_val,labels=classes,normalize="true",xticks_rotation=45,values_format=".2f",cmap="Blues",ax=ax)
 ax.set_title("Baseline TF-IDF + LR: matriz de confusão (validação)")
 plt.tight_layout()
 plt.savefig(FIGURES_DIR / "baseline_confusao_val.png", dpi=150)
