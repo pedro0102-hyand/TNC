@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from scipy.stats import binomtest
+from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
 
 DATA_PATH = Path("data/processed/clean_texts.parquet")
 BASELINE_PATH = Path("models/baseline.joblib")
@@ -102,6 +104,50 @@ print(f"Só o BERT acertou:      {(~acerto_b & acerto_n).sum()}")
 print(f"Só o baseline acertou:  {(acerto_b & ~acerto_n).sum()}")
 print(f"Ambos erraram:          {(~acerto_b & ~acerto_n).sum()}")
 
+
+y = resultados["categoria"]
+print("\n===== Geral =====")
+for nome, col in (("Baseline", "pred_baseline"), ("BERT", "pred_bert")):
+    acc = accuracy_score(y, resultados[col])
+    f1 = f1_score(y, resultados[col], average="macro")
+    print(f"{nome:<9} accuracy {acc:.3f} | F1 macro {f1:.3f}")
+
+
+def por_classe(coluna):
+    p, r, f, _ = precision_recall_fscore_support(y, resultados[coluna], labels=classes, zero_division=0)
+    return pd.DataFrame({"precision": p, "recall": r, "f1": f}, index=classes)
+
+pb = por_classe("pred_baseline")
+pn = por_classe("pred_bert")
+
+tabela = pd.DataFrame(
+    {
+        "suporte": y.value_counts().reindex(classes),
+        "f1_base": pb["f1"],
+        "f1_bert": pn["f1"],
+        "delta_f1": pn["f1"] - pb["f1"],
+        "rec_base": pb["recall"],
+        "rec_bert": pn["recall"],
+        "prec_base": pb["precision"],
+        "prec_bert": pn["precision"],
+    }
+).round(3)
+
+print("\n===== Por classe (ordenado pelo ganho de F1 do BERT) =====")
+print(tabela.sort_values("delta_f1", ascending=False).to_string())
+tabela.to_csv(REPORTS_DIR / f"metricas_por_classe_{args.split}.csv")
+
+# Comparação pareada: só contam as notícias em que os modelos discordam
+b = int((~acerto_b & acerto_n).sum())  # só o BERT acertou
+c = int((acerto_b & ~acerto_n).sum())  # só o baseline acertou
+n = len(resultados)
+dif = (b - c) / n
+erro_padrao = np.sqrt(b + c - (b - c) ** 2 / n) / n
+p = binomtest(b, b + c, 0.5).pvalue
+print("\n===== Comparação pareada (BERT - baseline) =====")
+print(f"Diferença de accuracy: {dif:+.3f}")
+print(f"Intervalo de 95%: [{dif - 1.96 * erro_padrao:+.3f}, {dif + 1.96 * erro_padrao:+.3f}]")
+print(f"Teste exato de McNemar: p = {p:.4f}")
 
 
 
