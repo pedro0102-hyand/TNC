@@ -5,10 +5,11 @@ import torch
 import numpy as np
 from pathlib import Path
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from scipy.stats import binomtest
-from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support
+from sklearn.metrics import accuracy_score, f1_score, precision_recall_fscore_support, ConfusionMatrixDisplay, confusion_matrix
 
 DATA_PATH = Path("data/processed/clean_texts.parquet")
 BASELINE_PATH = Path("models/baseline.joblib")
@@ -38,7 +39,6 @@ unicas["entrada"] = unicas["titulo"] + " " + unicas["texto"]
 
 treino_val, teste = train_test_split(unicas, test_size=0.15, stratify=unicas["categoria"], random_state=SEED)
 treino, val = train_test_split(treino_val,test_size=0.15 / 0.85,stratify=treino_val["categoria"],random_state=SEED)
-
 conjuntos = {"treino": treino, "val": val, "teste": teste}
 assert len(treino) + len(val) + len(teste) == len(unicas)
 
@@ -81,7 +81,6 @@ def prever_bert(textos, tamanho_lote=32):
 
 probs_bert = prever_bert(entradas)
 
-
 # Tabela com uma linha por notícia (sem o texto, para o arquivo ficar pequeno)
 resultados = avaliacao[["titulo", "categoria", "formato", "data", "link"]].reset_index(drop=True)
 resultados["pred_baseline"] = np.array(classes)[probs_baseline.argmax(axis=1)]
@@ -104,14 +103,12 @@ print(f"Só o BERT acertou:      {(~acerto_b & acerto_n).sum()}")
 print(f"Só o baseline acertou:  {(acerto_b & ~acerto_n).sum()}")
 print(f"Ambos erraram:          {(~acerto_b & ~acerto_n).sum()}")
 
-
 y = resultados["categoria"]
 print("\n===== Geral =====")
 for nome, col in (("Baseline", "pred_baseline"), ("BERT", "pred_bert")):
     acc = accuracy_score(y, resultados[col])
     f1 = f1_score(y, resultados[col], average="macro")
     print(f"{nome:<9} accuracy {acc:.3f} | F1 macro {f1:.3f}")
-
 
 def por_classe(coluna):
     p, r, f, _ = precision_recall_fscore_support(y, resultados[coluna], labels=classes, zero_division=0)
@@ -148,6 +145,58 @@ print("\n===== Comparação pareada (BERT - baseline) =====")
 print(f"Diferença de accuracy: {dif:+.3f}")
 print(f"Intervalo de 95%: [{dif - 1.96 * erro_padrao:+.3f}, {dif + 1.96 * erro_padrao:+.3f}]")
 print(f"Teste exato de McNemar: p = {p:.4f}")
+
+FIGURES_DIR = REPORTS_DIR / "figures"
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+cm_base = confusion_matrix(y, resultados["pred_baseline"], labels=classes)
+cm_bert = confusion_matrix(y, resultados["pred_bert"], labels=classes)
+
+def erro_mais_comum(cm):
+    """Para cada classe real, a categoria que mais recebe os erros dela."""
+    saida = []
+    for i in range(len(classes)):
+        erros = cm[i].copy()
+        erros[i] = 0
+        j = erros.argmax()
+        saida.append(f"{classes[j]} ({erros[j]})" if erros[j] > 0 else "-")
+    return saida
+
+resumo = pd.DataFrame(
+    {
+        "suporte": cm_bert.sum(axis=1),
+        "erros_base": cm_base.sum(axis=1) - np.diag(cm_base),
+        "erros_bert": cm_bert.sum(axis=1) - np.diag(cm_bert),
+        "mais_comum_base": erro_mais_comum(cm_base),
+        "mais_comum_bert": erro_mais_comum(cm_bert),
+    },
+    index=classes,
+)
+print("\n===== Para onde vão os erros de cada classe =====")
+print(resumo.to_string())
+
+confusoes = [
+    (cm_bert[i, j], classes[i], classes[j])
+    for i in range(len(classes))
+    for j in range(len(classes))
+    if i != j
+]
+print("\n===== Confusões mais frequentes do BERT (real -> prevista) =====")
+for qtd, real, prevista in sorted(confusoes, reverse=True)[:8]:
+    qtd_base = cm_base[classes.index(real), classes.index(prevista)]
+    print(f"  {real} -> {prevista}: {qtd}  (baseline: {qtd_base})")
+
+# Figura: as duas matrizes lado a lado, normalizadas por linha
+fig, axes = plt.subplots(1, 2, figsize=(18, 8))
+for ax, col, titulo in zip(
+    axes, ["pred_baseline", "pred_bert"], ["Baseline (TF-IDF + LR)", "BERT"]
+):
+    ConfusionMatrixDisplay.from_predictions(y,resultados[col],labels=classes,normalize="true",xticks_rotation=45,values_format=".2f",cmap="Blues",ax=ax,colorbar=False)
+    ax.set_title(f"{titulo}: {args.split}")
+
+plt.tight_layout()
+plt.savefig(FIGURES_DIR / f"confusao_{args.split}.png", dpi=150)
+plt.close()
+print(f"\nFigura salva em {FIGURES_DIR / f'confusao_{args.split}.png'}")
 
 
 
