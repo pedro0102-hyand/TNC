@@ -12,21 +12,24 @@ from transformers import (AutoModelForSequenceClassification,AutoTokenizer,DataC
 
 SEED = 42
 MODEL_NAME = "neuralmind/bert-base-portuguese-cased"
-MAX_LENGTH = 256
+MAX_LENGTH = 256 # limite de tamanho dos textos em tokens
 DATA_PATH = Path("data/processed/clean_texts.parquet")
 df = pd.read_parquet(DATA_PATH)
 
+# filtrando noticias que pertencem a uma unica categoria
 unicas = df[df["n_categorias"] == 1].copy()
 unicas["categoria"] = unicas["categorias"].map(lambda c: c[0])
 unicas = unicas.reset_index(drop=True)
 
+# concatenando titulo e texto da noticia
 unicas["entrada"] = unicas["titulo"] + " " + unicas["texto"]
 print(f"Notícias de categoria única: {len(unicas)}")
 
 treino_val, teste = train_test_split(unicas, test_size=0.15, stratify=unicas["categoria"], random_state=SEED)
 treino, val = train_test_split(treino_val,test_size=0.15 / 0.85,stratify=treino_val["categoria"],random_state=SEED)
-conjuntos = {"treino": treino, "val": val, "teste": teste}
 
+# criando um dicionário com os três subconjuntos
+conjuntos = {"treino": treino, "val": val, "teste": teste}
 assert len(treino) + len(val) + len(teste) == len(unicas)
 
 nomes = list(conjuntos)
@@ -51,9 +54,10 @@ id2label = {i: c for c, i in label2id.items()}
 print(f"\nlabel2id: {label2id}")
 print(f"\nid2label: {id2label}")
 
-# tokenizacao
+# baixando o tokenizer do modelo BERT
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
+# tokeniza a entrada do usuário
 def tokenizar(lote):
     return tokenizer(lote["entrada"], truncation = True, max_length = MAX_LENGTH)
 
@@ -64,8 +68,11 @@ def para_dataset(parte):
             "labels": parte["categoria"].map(label2id).tolist(),
         }
     )
+
+    # aplicando tokenizacao em lote do dataset
     return ds.map(tokenizar, batched=True, remove_columns=["entrada"])
 
+# gera os datasets de treino e validacao já tokenizados
 ds_treino = para_dataset(treino)
 ds_val = para_dataset(val)
 print(f"\nTreino tokenizado: {len(ds_treino)} | Validação tokenizada: {len(ds_val)}")
@@ -90,6 +97,7 @@ print(f"Parâmetros: {n_params / 1e6:.1f}M")
 # Monta os lotes, completando cada um só até o seu texto mais longo
 data_collator = DataCollatorWithPadding(tokenizer)
 
+# calculando as métricas de avaliacao do modelo
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
     pred = np.argmax(logits, axis=-1)
@@ -117,7 +125,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--smoke", action="store_true", help="teste rápido: 200 exemplos, 1 época")
 args = parser.parse_args()
 
-EPOCAS = 1 if args.smoke else 3
+EPOCAS = 1 if args.smoke else 3 # definindo a quantidade de vezes que passamos pelos dados de treino
 
 if args.smoke:
     ds_treino_run = ds_treino.shuffle(seed=SEED).select(range(200))
@@ -126,13 +134,14 @@ if args.smoke:
 else:
     ds_treino_run, ds_val_run = ds_treino, ds_val
 
+# definindo as configuracoes do treinamento do modelo
 training_args = TrainingArguments(
     output_dir="models/checkpoints",
     num_train_epochs=EPOCAS,
     per_device_train_batch_size=8,
-    per_device_eval_batch_size=16,
+    per_device_eval_batch_size=16, # na validacao, nao há atualizacao dos pesos do modelo
     learning_rate=2e-5,
-    weight_decay=0.01,
+    weight_decay=0.01, # regularizacao L2, penaliza valores muito grandes para evitar overfitting
     eval_strategy="epoch",
     save_strategy="no" if args.smoke else "epoch",
     load_best_model_at_end=not args.smoke,
@@ -143,9 +152,9 @@ training_args = TrainingArguments(
     report_to="none",
 )
 
+# treinando o BERT
 trainer = Trainer(model=model,args=training_args,train_dataset=ds_treino_run,eval_dataset=ds_val_run,processing_class=tokenizer,data_collator=data_collator,compute_metrics=compute_metrics)
 print(f"Dispositivo usado pelo Trainer: {trainer.args.device}")
-
 inicio = time.time()
 resultado = trainer.train()
 duracao = time.time() - inicio
