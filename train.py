@@ -57,7 +57,7 @@ print(f"\nid2label: {id2label}")
 # baixando o tokenizer do modelo BERT
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
-# tokeniza a entrada do usuário
+# tokeniza a entrada (texto + titulo)
 def tokenizar(lote):
     return tokenizer(lote["entrada"], truncation = True, max_length = MAX_LENGTH)
 
