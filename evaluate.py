@@ -222,3 +222,47 @@ for coluna, titulo in (
 print("\nFaixas de tamanho (caracteres da entrada):")
 print(resultados.groupby("faixa_tamanho", observed=True)["n_chars"].agg(["min", "max"]))
 
+
+textos = avaliacao["texto"].reset_index(drop=True)
+ambos = resultados[~acerto_b & ~acerto_n].copy()
+ambos["texto"] = textos[ambos.index]
+print(f"\n===== Erros que ambos cometeram: {len(ambos)} =====")
+
+mesma = ambos["pred_baseline"] == ambos["pred_bert"]
+print(f"Os dois erraram para a MESMA categoria: {mesma.sum()} ({mesma.mean():.0%})")
+
+taxa = (ambos["categoria"].value_counts() / y.value_counts()).dropna().round(2)
+print("\nFração de cada classe em que ambos erram:")
+print(taxa.sort_values(ascending=False).to_string())
+print("\nPares mais comuns (real -> previsão do BERT):")
+print((ambos["categoria"] + " -> " + ambos["pred_bert"]).value_counts().head(8).to_string())
+conf_erros = ambos["conf_bert"].mean()
+conf_acertos = resultados.loc[acerto_n, "conf_bert"].mean()
+print(f"\nConfiança média do BERT: {conf_erros:.2f} nesses erros, {conf_acertos:.2f} nos acertos")
+
+# Arquivo para leitura, do erro mais confiante ao menos confiante
+ambos = ambos.sort_values("conf_bert", ascending=False)
+
+print("\nOs 5 erros mais confiantes do BERT:")
+for _, r in ambos.head(5).iterrows():
+    print(f"  [{r['categoria']} -> {r['pred_bert']} {r['conf_bert']:.0%}] {r['titulo'][:90]}")
+
+linhas = [
+    f"# Erros que baseline e BERT cometeram ({args.split}): {len(ambos)}",
+    "",
+    "Ordenados pela confiança do BERT (o mais confiante primeiro).",
+]
+for k, (_, r) in enumerate(ambos.iterrows(), start=1):
+    linhas += [
+        "",
+        f"### {k}. {r['titulo']}",
+        f"- Real: **{r['categoria']}** | Baseline: {r['pred_baseline']} "
+        f"({r['conf_baseline']:.0%}) | BERT: {r['pred_bert']} ({r['conf_bert']:.0%})",
+        f"- Formato: {r['formato']} | Data: {r['data']} | {r['link']}",
+        f"> {r['texto'][:400]}...",
+    ]
+
+saida_md = REPORTS_DIR / f"erros_ambos_{args.split}.md"
+saida_md.write_text("\n".join(linhas), encoding="utf-8")
+print(f"\nArquivo para leitura salvo em {saida_md}")
+
