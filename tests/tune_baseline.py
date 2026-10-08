@@ -53,8 +53,8 @@ pipeline = Pipeline(
 )
 
 grade = {
-    "tfidf__ngram_range": [(1, 1), (1, 2)],
-    "clf__C": [1, 10, 100],
+    "tfidf__ngram_range": [(1, 1), (1, 2)], # sequencia continua de n itens
+    "clf__C": [1, 10, 100], # controle na capacidade de computacao
     "clf__class_weight": [None, "balanced"],
 }
 
