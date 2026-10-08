@@ -199,4 +199,26 @@ plt.close()
 print(f"\nFigura salva em {FIGURES_DIR / f'confusao_{args.split}.png'}")
 
 
+resultados["acerto_baseline"] = acerto_b
+resultados["acerto_bert"] = acerto_n
+resultados["ano"] = pd.to_datetime(resultados["data"]).dt.year
+resultados["formato_agrupado"] = resultados["formato"].replace({"video": "video/audio", "audio": "video/audio"})
+resultados["n_chars"] = avaliacao["entrada"].str.len().values
+resultados["faixa_tamanho"] = pd.qcut(resultados["n_chars"], 4, labels=["Q1 (curtos)", "Q2", "Q3", "Q4 (longos)"])
+
+def corte(coluna):
+    t = resultados.groupby(coluna, observed=True).agg(n=("categoria", "size"),acc_baseline=("acerto_baseline", "mean"),acc_bert=("acerto_bert", "mean"))
+    t["delta"] = t["acc_bert"] - t["acc_baseline"]
+    return t.round(3)
+
+for coluna, titulo in (
+    ("formato_agrupado", "formato"),
+    ("ano", "ano"),
+    ("faixa_tamanho", "tamanho do texto"),
+):
+    print(f"\n===== Accuracy por {titulo} =====")
+    print(corte(coluna).to_string())
+
+print("\nFaixas de tamanho (caracteres da entrada):")
+print(resultados.groupby("faixa_tamanho", observed=True)["n_chars"].agg(["min", "max"]))
 
