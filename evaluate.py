@@ -26,6 +26,7 @@ parser.add_argument("--abrir-teste",action="store_true",help="confirma que a ava
 parser.add_argument("--bert-dir", default=BERT_DIR, help="pasta do BERT a avaliar")
 parser.add_argument("--baseline", default=str(BASELINE_PATH), help="arquivo do baseline a avaliar")
 parser.add_argument("--comparar-com", default=None, help="pasta de outro BERT, já avaliado neste mesmo split, para comparar")
+parser.add_argument("--ambiguas", action="store_true", help="avalia tambem as noticias ambiguas (2 ou mais categorias)")
 args = parser.parse_args()
 
 if args.split == "teste" and not args.abrir_teste:
@@ -282,7 +283,6 @@ saida_md = REPORTS_DIR / f"erros_ambos_{args.split}_{TAG}.md"
 saida_md.write_text("\n".join(linhas), encoding="utf-8")
 print(f"\nArquivo para leitura salvo em {saida_md}")
 
-
 # comparacao com outro BERT (regra de escolha entre 256 e 512 tokens)
 if args.comparar_com:
     tag_outro = Path(args.comparar_com).name
@@ -319,3 +319,50 @@ if args.comparar_com:
     regra = (f1_este - f1_outro >= 0.01) and (acc_este >= acc_outro)
     print(f"\nRegra (F1 macro pelo menos +0,01 e accuracy sem cair): {'CUMPRIDA' if regra else 'NÃO cumprida'} por {TAG}")
 
+# avaliacao das noticias ambiguas (2 ou mais categorias), que nao entraram em treino, validacao nem teste
+if args.ambiguas:
+    ambiguas = df[df["n_categorias"] > 1].reset_index(drop=True)
+    ambiguas["entrada"] = ambiguas["titulo"] + " " + ambiguas["texto"]
+    entradas_amb = ambiguas["entrada"].tolist()
+
+    probs_b_amb = baseline.predict_proba(entradas_amb)
+    probs_n_amb = prever_bert(entradas_amb, 32 if MAX_LENGTH <= 256 else 16)
+    pred_b_amb = np.array(classes)[probs_b_amb.argmax(axis=1)]
+    pred_n_amb = np.array(classes)[probs_n_amb.argmax(axis=1)]
+
+    # acerto: a previsao esta entre as categorias reais da noticia
+    cats = ambiguas["categorias"].map(list)
+    ok_b = np.array([p in c for p, c in zip(pred_b_amb, cats)])
+    ok_n = np.array([p in c for p, c in zip(pred_n_amb, cats)])
+
+    n_amb = len(ambiguas)
+    acaso = (ambiguas["n_categorias"] / len(classes)).mean() # chute uniforme entre as 9 categorias
+    print(f"\n===== Notícias ambíguas: {n_amb} =====")
+    print(f"Acerto por acaso (chute uniforme): {acaso:.3f}")
+    print(f"Baseline: a previsão cai numa categoria real em {ok_b.mean():.3f}")
+    print(f"BERT:     a previsão cai numa categoria real em {ok_n.mean():.3f}")
+
+    b3 = int((~ok_b & ok_n).sum())  # só o BERT acertou
+    c3 = int((ok_b & ~ok_n).sum())  # só o baseline acertou
+    dif3 = (b3 - c3) / n_amb
+    erro_padrao3 = np.sqrt(b3 + c3 - (b3 - c3) ** 2 / n_amb) / n_amb
+    p3 = binomtest(b3, b3 + c3, 0.5).pvalue if (b3 + c3) > 0 else 1.0
+    print(f"Diferença (BERT - baseline): {dif3:+.3f} | intervalo de 95%: [{dif3 - 1.96 * erro_padrao3:+.3f}, {dif3 + 1.96 * erro_padrao3:+.3f}] | p = {p3:.4f}")
+
+    ambiguas["ok_baseline"] = ok_b
+    ambiguas["ok_bert"] = ok_n
+    ambiguas["faixa_cats"] = ambiguas["n_categorias"].clip(upper=3).map({2: "2 categorias", 3: "3 ou mais"})
+    ambiguas["par"] = cats.map(lambda c: " + ".join(sorted(c)))
+
+    print("\n===== Por número de categorias =====")
+    print(ambiguas.groupby("faixa_cats").agg(n=("ok_bert", "size"), baseline=("ok_baseline", "mean"), bert=("ok_bert", "mean")).round(3).to_string())
+
+    print("\n===== Combinações de categorias mais frequentes =====")
+    print(ambiguas.groupby("par").agg(n=("ok_bert", "size"), baseline=("ok_baseline", "mean"), bert=("ok_bert", "mean")).sort_values("n", ascending=False).head(8).round(3).to_string())
+
+    # tabela para o README, sem o texto das noticias
+    ambiguas["pred_baseline"] = pred_b_amb
+    ambiguas["pred_bert"] = pred_n_amb
+    ambiguas["categorias"] = ambiguas["par"]
+    ambiguas[["titulo", "categorias", "pred_baseline", "pred_bert", "ok_baseline", "ok_bert"]].to_csv(REPORTS_DIR / f"ambiguas_{TAG}.csv", index=False)
+    print(f"\nTabela salva em {REPORTS_DIR / f'ambiguas_{TAG}.csv'}")
