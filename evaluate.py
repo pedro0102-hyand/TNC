@@ -1,5 +1,6 @@
 import argparse
 import sys
+import json
 import joblib
 import torch
 import numpy as np
@@ -15,13 +16,16 @@ DATA_PATH = Path("data/processed/clean_texts.parquet")
 BASELINE_PATH = Path("models/baseline.joblib")
 BERT_DIR = "models/bert"
 REPORTS_DIR = Path("reports")
-MAX_LENGTH = 256
+MAX_LENGTH = 256 # padrao, usado se o modelo nao tiver treino.json
 SEED = 42
 df = pd.read_parquet(DATA_PATH)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--split", choices=["val", "teste"], default="val")
 parser.add_argument("--abrir-teste",action="store_true",help="confirma que a avaliação final no teste deve ser feita agora")
+parser.add_argument("--bert-dir", default=BERT_DIR, help="pasta do BERT a avaliar")
+parser.add_argument("--baseline", default=str(BASELINE_PATH), help="arquivo do baseline a avaliar")
+parser.add_argument("--comparar-com", default=None, help="pasta de outro BERT, já avaliado neste mesmo split, para comparar")
 args = parser.parse_args()
 
 if args.split == "teste" and not args.abrir_teste:
@@ -29,6 +33,18 @@ if args.split == "teste" and not args.abrir_teste:
         "O conjunto de teste só abre com --abrir-teste "
         "(avaliação final, uma única vez). Use --split val para o dia a dia."
     )
+
+BERT_DIR = args.bert_dir # pasta do modelo BERT a avaliar
+BASELINE_PATH = Path(args.baseline)
+TAG = Path(BERT_DIR).name # nome do modelo, usado nos nomes dos arquivos de saida
+
+# o max_length vem do treino.json do modelo (sem o arquivo, fica o padrao de 256)
+config_treino = Path(BERT_DIR) / "treino.json"
+if config_treino.exists():
+    MAX_LENGTH = json.loads(config_treino.read_text(encoding="utf-8"))["max_length"]
+else:
+    print(f"Aviso: {config_treino} não existe, assumindo max_length={MAX_LENGTH}")
+print(f"Modelo avaliado: {BERT_DIR} (max_length={MAX_LENGTH}) | baseline: {BASELINE_PATH}")
 
 # Categoria única: base do treino, validação e teste
 unicas = df[df["n_categorias"] == 1].copy()
@@ -61,7 +77,7 @@ entradas = avaliacao["entrada"].tolist()
 baseline = joblib.load(BASELINE_PATH)
 probs_baseline = baseline.predict_proba(entradas)
 
-# BERT: carregado de models/bert, em lotes e sem gradientes
+# BERT: carregado da pasta escolhida em --bert-dir, em lotes e sem gradientes
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 tokenizer = AutoTokenizer.from_pretrained(BERT_DIR)
 model = AutoModelForSequenceClassification.from_pretrained(BERT_DIR).to(device).eval()
@@ -79,7 +95,7 @@ def prever_bert(textos, tamanho_lote=32):
         saidas.append(torch.softmax(logits, dim=-1).cpu().numpy())
     return np.concatenate(saidas)
 
-probs_bert = prever_bert(entradas)
+probs_bert = prever_bert(entradas, 32 if MAX_LENGTH <= 256 else 16) # lote menor com 512 tokens, so para economizar memoria
 
 # Tabela com uma linha por notícia (sem o texto, para o arquivo ficar pequeno)
 resultados = avaliacao[["titulo", "categoria", "formato", "data", "link"]].reset_index(drop=True)
@@ -88,7 +104,7 @@ resultados["conf_baseline"] = probs_baseline.max(axis=1)
 resultados["pred_bert"] = np.array(classes)[probs_bert.argmax(axis=1)]
 resultados["conf_bert"] = probs_bert.max(axis=1)
 REPORTS_DIR.mkdir(exist_ok=True)
-saida = REPORTS_DIR / f"predicoes_{args.split}.parquet"
+saida = REPORTS_DIR / f"predicoes_{args.split}_{TAG}.parquet"
 resultados.to_parquet(saida, index=False)
 print(f"\nPrevisões salvas em {saida}")
 
@@ -132,7 +148,7 @@ tabela = pd.DataFrame(
 
 print("\n===== Por classe (ordenado pelo ganho de F1 do BERT) =====")
 print(tabela.sort_values("delta_f1", ascending=False).to_string())
-tabela.to_csv(REPORTS_DIR / f"metricas_por_classe_{args.split}.csv")
+tabela.to_csv(REPORTS_DIR / f"metricas_por_classe_{args.split}_{TAG}.csv")
 
 # Comparação pareada: só contam as notícias em que os modelos discordam
 b = int((~acerto_b & acerto_n).sum())  # só o BERT acertou
@@ -188,15 +204,15 @@ for qtd, real, prevista in sorted(confusoes, reverse=True)[:8]:
 # Figura: as duas matrizes lado a lado, normalizadas por linha
 fig, axes = plt.subplots(1, 2, figsize=(18, 8))
 for ax, col, titulo in zip(
-    axes, ["pred_baseline", "pred_bert"], ["Baseline (TF-IDF + LR)", "BERT"]
+    axes, ["pred_baseline", "pred_bert"], ["Baseline (TF-IDF + LR)", f"BERT ({TAG})"]
 ):
     ConfusionMatrixDisplay.from_predictions(y,resultados[col],labels=classes,normalize="true",xticks_rotation=45,values_format=".2f",cmap="Blues",ax=ax,colorbar=False)
     ax.set_title(f"{titulo}: {args.split}")
 
 plt.tight_layout()
-plt.savefig(FIGURES_DIR / f"confusao_{args.split}.png", dpi=150)
+plt.savefig(FIGURES_DIR / f"confusao_{args.split}_{TAG}.png", dpi=150)
 plt.close()
-print(f"\nFigura salva em {FIGURES_DIR / f'confusao_{args.split}.png'}")
+print(f"\nFigura salva em {FIGURES_DIR / f'confusao_{args.split}_{TAG}.png'}")
 
 
 resultados["acerto_baseline"] = acerto_b
@@ -248,7 +264,7 @@ for _, r in ambos.head(5).iterrows():
     print(f"  [{r['categoria']} -> {r['pred_bert']} {r['conf_bert']:.0%}] {r['titulo'][:90]}")
 
 linhas = [
-    f"# Erros que baseline e BERT cometeram ({args.split}): {len(ambos)}",
+    f"# Erros que baseline e BERT ({TAG}) cometeram ({args.split}): {len(ambos)}",
     "",
     "Ordenados pela confiança do BERT (o mais confiante primeiro).",
 ]
@@ -262,7 +278,44 @@ for k, (_, r) in enumerate(ambos.iterrows(), start=1):
         f"> {r['texto'][:400]}...",
     ]
 
-saida_md = REPORTS_DIR / f"erros_ambos_{args.split}.md"
+saida_md = REPORTS_DIR / f"erros_ambos_{args.split}_{TAG}.md"
 saida_md.write_text("\n".join(linhas), encoding="utf-8")
 print(f"\nArquivo para leitura salvo em {saida_md}")
+
+
+# comparacao com outro BERT (regra de escolha entre 256 e 512 tokens)
+if args.comparar_com:
+    tag_outro = Path(args.comparar_com).name
+    arquivo_outro = REPORTS_DIR / f"predicoes_{args.split}_{tag_outro}.parquet"
+    if not arquivo_outro.exists():
+        sys.exit(f"Falta {arquivo_outro}. Rode antes: python evaluate.py --bert-dir {args.comparar_com}")
+    outro = pd.read_parquet(arquivo_outro)
+
+    # as duas tabelas precisam ser das mesmas noticias, na mesma ordem
+    assert (outro["link"].values == resultados["link"].values).all(), "Notícias diferentes"
+
+    acerto_este = acerto_n.values
+    acerto_outro = (outro["pred_bert"] == outro["categoria"]).values
+    acc_este = accuracy_score(y, resultados["pred_bert"])
+    f1_este = f1_score(y, resultados["pred_bert"], average="macro")
+    acc_outro = accuracy_score(y, outro["pred_bert"])
+    f1_outro = f1_score(y, outro["pred_bert"], average="macro")
+
+    print(f"\n===== {TAG} contra {tag_outro} ({args.split}) =====")
+    print(f"{TAG:<10} accuracy {acc_este:.3f} | F1 macro {f1_este:.3f}")
+    print(f"{tag_outro:<10} accuracy {acc_outro:.3f} | F1 macro {f1_outro:.3f}")
+
+    b2 = int((acerto_este & ~acerto_outro).sum())  # só este acertou
+    c2 = int((~acerto_este & acerto_outro).sum())  # só o outro acertou
+    dif2 = (b2 - c2) / n
+    erro_padrao2 = np.sqrt(b2 + c2 - (b2 - c2) ** 2 / n) / n
+    p2 = binomtest(b2, b2 + c2, 0.5).pvalue if (b2 + c2) > 0 else 1.0
+    print(f"\nSó {TAG} acertou: {b2} | só {tag_outro} acertou: {c2}")
+    print(f"Diferença de accuracy: {dif2:+.3f}")
+    print(f"Intervalo de 95%: [{dif2 - 1.96 * erro_padrao2:+.3f}, {dif2 + 1.96 * erro_padrao2:+.3f}]")
+    print(f"Teste exato de McNemar: p = {p2:.4f}")
+
+    # regra definida antes: F1 macro pelo menos +0,01 e accuracy sem cair
+    regra = (f1_este - f1_outro >= 0.01) and (acc_este >= acc_outro)
+    print(f"\nRegra (F1 macro pelo menos +0,01 e accuracy sem cair): {'CUMPRIDA' if regra else 'NÃO cumprida'} por {TAG}")
 
