@@ -2,18 +2,38 @@ import pandas as pd
 import torch
 import numpy as np
 import time
+import sys
 import argparse
+import json
 from sklearn.metrics import accuracy_score, f1_score
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer
 from datasets import Dataset
-from transformers import (AutoModelForSequenceClassification,AutoTokenizer,DataCollatorWithPadding, Trainer, TrainingArguments)
+from transformers import (AutoModelForSequenceClassification,AutoTokenizer,DataCollatorWithPadding, Trainer, TrainingArguments, set_seed)
 
 SEED = 42
 MODEL_NAME = "neuralmind/bert-base-portuguese-cased"
-MAX_LENGTH = 256 # limite de tamanho dos textos em tokens
 DATA_PATH = Path("data/processed/clean_texts.parquet")
+
+parser = argparse.ArgumentParser(description="Fine-tuning do BERT para classificar notícias")
+parser.add_argument("--max-length", type=int, default=256, help="tokens por notícia")
+parser.add_argument("--saida", default="models/bert", help="pasta do modelo final")
+parser.add_argument("--batch-size", type=int, default=8, help="notícias por mini-lote")
+parser.add_argument("--grad-acc", type=int, default=1, help="mini-lotes somados por atualização dos pesos")
+parser.add_argument("--smoke", action="store_true", help="teste rápido: 200 exemplos, 1 época")
+parser.add_argument("--sobrescrever", action="store_true", help="permite refazer uma saída que já existe")
+args = parser.parse_args()
+
+MAX_LENGTH = args.max_length # limite de tamanho dos textos em tokens
+SAIDA = Path(args.saida) 
+CHECKPOINTS_DIR = SAIDA.parent / f"checkpoints_{SAIDA.name}"
+
+# trava para nao sobrescrever um modelo ja treinado sem querer
+if SAIDA.exists() and not args.smoke and not args.sobrescrever:
+    sys.exit(f"{SAIDA} já existe. Use outra --saida ou --sobrescrever para refazer.")
+print(f"Configuração: max_length={MAX_LENGTH} | lote {args.batch_size} x acumulação {args.grad_acc} = {args.batch_size * args.grad_acc} | saída={SAIDA}")
+
 df = pd.read_parquet(DATA_PATH)
 
 # filtrando noticias que pertencem a uma unica categoria
@@ -77,7 +97,6 @@ ds_treino = para_dataset(treino)
 ds_val = para_dataset(val)
 print(f"\nTreino tokenizado: {len(ds_treino)} | Validação tokenizada: {len(ds_val)}")
 print(f"Colunas: {ds_treino.column_names}")
-
 ids = ds_treino[0]["input_ids"]
 print(f"\nTokens do primeiro exemplo: {len(ids)}")
 print(f"Primeiros tokens: {tokenizer.convert_ids_to_tokens(ids[:15])}")
@@ -85,7 +104,6 @@ print(f"Último token: {tokenizer.convert_ids_to_tokens(ids[-1])}")
 print(f"Rótulo: {ds_treino[0]['labels']} -> {id2label[ds_treino[0]['labels']]}")
 no_limite = sum(len(x) == MAX_LENGTH for x in ds_treino["input_ids"]) / len(ds_treino)
 print(f"Exemplos que chegaram ao limite de {MAX_LENGTH} tokens: {no_limite:.1%}")
-
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(device)
 
@@ -121,10 +139,6 @@ print(f"Loss do lote (sem treino): {saida.loss.item():.3f}  (referência ln 9 = 
 if device.type == "mps":
     print(f"Memória no mps: {torch.mps.current_allocated_memory() / 1e9:.2f} GB")
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--smoke", action="store_true", help="teste rápido: 200 exemplos, 1 época")
-args = parser.parse_args()
-
 EPOCAS = 1 if args.smoke else 3 # definindo a quantidade de vezes que passamos pelos dados de treino
 
 if args.smoke:
@@ -136,10 +150,11 @@ else:
 
 # definindo as configuracoes do treinamento do modelo
 training_args = TrainingArguments(
-    output_dir="models/checkpoints",
+    output_dir=str(CHECKPOINTS_DIR),
     num_train_epochs=EPOCAS,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=16, # na validacao, nao há atualizacao dos pesos do modelo
+    per_device_train_batch_size=args.batch_size,
+    gradient_accumulation_steps=args.grad_acc, # soma o gradiente de varios mini-lotes antes de atualizar os pesos
+    per_device_eval_batch_size=16 if MAX_LENGTH <= 256 else 8, # na validacao, nao há atualizacao dos pesos do modelo
     learning_rate=2e-5,
     weight_decay=0.01, # regularizacao L2, penaliza valores muito grandes para evitar overfitting
     eval_strategy="epoch",
@@ -170,7 +185,22 @@ if device.type == "mps":
     print(f"Memória reservada no mps: {torch.mps.driver_allocated_memory() / 1e9:.2f} GB")
 
 if not args.smoke:
-    trainer.save_model("models/bert")
-    tokenizer.save_pretrained("models/bert")
-    print("\nModelo salvo em models/bert")
+    trainer.save_model(str(SAIDA))
+    tokenizer.save_pretrained(str(SAIDA))
+
+    # guardando a configuracao do treino ao lado do modelo
+    config_treino = {
+        "max_length": MAX_LENGTH,
+        "epocas": EPOCAS,
+        "batch_size": args.batch_size,
+        "grad_acc": args.grad_acc,
+        "learning_rate": training_args.learning_rate,
+        "weight_decay": training_args.weight_decay,
+        "seed": SEED,
+        "modelo_base": MODEL_NAME,
+        "f1_macro_val": trainer.state.best_metric,
+        "tempo_min": round(duracao / 60, 1),
+    }
+    (SAIDA / "treino.json").write_text(json.dumps(config_treino, indent=2), encoding="utf-8")
+    print(f"\nModelo salvo em {SAIDA}")
 
