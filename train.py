@@ -107,6 +107,8 @@ print(f"Exemplos que chegaram ao limite de {MAX_LENGTH} tokens: {no_limite:.1%}"
 device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
 print(device)
 
+set_seed(SEED)
+
 # definindo o modelo de classificacao
 model = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME, num_labels = len(classes), id2label = id2label, label2id = label2id)
 n_params = sum(p.numel() for p in model.parameters())
