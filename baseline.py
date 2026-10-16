@@ -65,23 +65,25 @@ print(teste["categoria"].value_counts())
 
 # criando o pipeline do modelo
 # pipeline para evitar vazamento de dados entre treino e validação
-
 modelo = Pipeline(
     [
         (
             "tfidf",
             TfidfVectorizer(
-                lowercase=True,
-                ngram_range=(1, 1),
-                min_df=2,
-                max_df=0.9,
+                lowercase=True, # conversao em minusculo
+                ngram_range=(1, 1), # usando palavras isoladas
+                min_df=2, # ignora termos que aparecem em apenas um documento
+                max_df=0.9, # ignora termos que aparecem em mais de 90% dos documentos
                 sublinear_tf=True,
             ),
         ),
         (
             "clf",
             LogisticRegression(
-                C=10, class_weight="balanced", max_iter=2000, random_state=SEED
+                C=10,
+                class_weight="balanced", # eleva o peso de categorias menos frequentes
+                max_iter=2000, 
+                random_state=SEED,
             ),
         ),
     ]

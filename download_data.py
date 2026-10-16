@@ -13,7 +13,7 @@ def download_dataset(dataset_name: str, output_path: Path) -> None:
 
     # Carrega o dataset e salva em formato Parquet
     dataset = load_dataset(dataset_name)
-    df = dataset["train"].to_pandas()
+    df = dataset["train"].to_pandas() # lendo a particao de treino do dataset
     df.to_parquet(output_path, index=False)
     print(f"Dataset salvo em {output_path}")
     print(f"Linhas: {len(df)} | Colunas: {list(df.columns)}")
