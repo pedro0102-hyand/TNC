@@ -35,7 +35,6 @@ print(f"\nFormato das páginas:\n{df['formato'].value_counts()}")
 # remocão de prefixos e sufixos nos títulos
 df["titulo"] = df["titulo"].str.replace(r"Duration,\s*[\d,.:]+\s*$", "", regex=True)
 df["titulo"] = df["titulo"].str.replace(r"^(?:Vídeo|Áudio),\s*(?:Em áudio\s*\|\s*)?", "", regex=True).str.strip()
-
 print(f"\nTítulos ainda com 'Duration': {df['titulo'].str.contains('Duration').sum()}")
 print(f"Títulos ainda com prefixo: {df['titulo'].str.match(r'^(Vídeo|Áudio),').sum()}")
 print(f"Títulos vazios: {(df['titulo'].str.len() == 0).sum()}")

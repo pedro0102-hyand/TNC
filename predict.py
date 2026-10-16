@@ -6,11 +6,10 @@ from pathlib import Path
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 def limpar_texto(t):
-
     return re.sub(r"\s+", " ", t).strip()
 
 def limpar_titulo(t):
-
+    
     t = re.sub(r"Duration,\s*[\d,.:]+\s*$", "", t)
     t = re.sub(r"^(?:Vídeo|Áudio),\s*(?:Em áudio\s*\|\s*)?", "", t)
     return limpar_texto(t)

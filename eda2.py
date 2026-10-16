@@ -33,11 +33,7 @@ categorias_explodidas = df.explode("categorias")
 contagem_categorias = categorias_explodidas["categorias"].value_counts()
 
 # distribuição de categorias
-distribuicao_categorias = pd.DataFrame({
-    "textos": contagem_categorias,
-    "percentual": contagem_categorias / len(df) * 100,
-}).round(1)
-
+distribuicao_categorias = pd.DataFrame({"textos": contagem_categorias, "percentual": contagem_categorias / len(df) * 100}).round(1)
 print("\nTextos associados a cada categoria:")
 print(distribuicao_categorias)
 print("Um texto pode pertencer a várias categorias, então os percentuais podem somar mais de 100%.")
@@ -45,11 +41,7 @@ print("Um texto pode pertencer a várias categorias, então os percentuais podem
 # quantidade de categorias por texto
 quantidade_por_texto = df["categorias"].map(len)
 contagem_por_quantidade = quantidade_por_texto.value_counts().sort_index()
-distribuicao_por_quantidade = pd.DataFrame({
-    "textos": contagem_por_quantidade,
-    "percentual": contagem_por_quantidade / len(df) * 100,
-}).round(1)
-
+distribuicao_por_quantidade = pd.DataFrame({"textos": contagem_por_quantidade, "percentual": contagem_por_quantidade / len(df) * 100}).round(1)
 print("\nQuantidade de categorias por texto:")
 print(distribuicao_por_quantidade)
 
@@ -61,20 +53,15 @@ if "n_categorias" in df.columns:
 combinacoes = df["categorias"].map(lambda categorias: tuple(sorted(categorias)))
 contagem_combinacoes = combinacoes.value_counts().head(15)
 
-distribuicao_combinacoes = pd.DataFrame({
-    "textos": contagem_combinacoes,
-    "percentual": contagem_combinacoes / len(df) * 100,
-}).round(1)
-
+distribuicao_combinacoes = pd.DataFrame({"textos": contagem_combinacoes, "percentual": contagem_combinacoes / len(df) * 100}).round(1)
 print("\n15 combinações de categorias mais frequentes:")
 print(distribuicao_combinacoes)
 
+# análise da distribuicao de caracteres
 df["n_caracteres_texto"] = df["texto"].str.len()
 df["n_palavras_texto"] = df["texto"].str.split().str.len()
 df["n_caracteres_titulo"] = df["titulo"].str.len()
-
 percentis = [0.5, 0.75, 0.9, 0.95, 0.99]
-
 print("\nCaracteres por texto:")
 print(df["n_caracteres_texto"].describe(percentiles=percentis).round(1))
 print("\nPalavras por texto:")
