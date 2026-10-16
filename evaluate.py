@@ -56,6 +56,7 @@ unicas["entrada"] = unicas["titulo"] + " " + unicas["texto"]
 
 treino_val, teste = train_test_split(unicas, test_size=0.15, stratify=unicas["categoria"], random_state=SEED)
 treino, val = train_test_split(treino_val,test_size=0.15 / 0.85,stratify=treino_val["categoria"],random_state=SEED)
+
 conjuntos = {"treino": treino, "val": val, "teste": teste}
 assert len(treino) + len(val) + len(teste) == len(unicas)
 
@@ -128,6 +129,7 @@ for nome, col in (("Baseline", "pred_baseline"), ("BERT", "pred_bert")):
     print(f"{nome:<9} accuracy {acc:.3f} | F1 macro {f1:.3f}")
 
 def por_classe(coluna):
+
     p, r, f, _ = precision_recall_fscore_support(y, resultados[coluna], labels=classes, zero_division=0)
     return pd.DataFrame({"precision": p, "recall": r, "f1": f}, index=classes)
 
@@ -215,7 +217,6 @@ plt.savefig(FIGURES_DIR / f"confusao_{args.split}_{TAG}.png", dpi=150)
 plt.close()
 print(f"\nFigura salva em {FIGURES_DIR / f'confusao_{args.split}_{TAG}.png'}")
 
-
 resultados["acerto_baseline"] = acerto_b
 resultados["acerto_bert"] = acerto_n
 resultados["ano"] = pd.to_datetime(resultados["data"]).dt.year
@@ -285,6 +286,7 @@ print(f"\nArquivo para leitura salvo em {saida_md}")
 
 # comparacao com outro BERT (regra de escolha entre 256 e 512 tokens)
 if args.comparar_com:
+    
     tag_outro = Path(args.comparar_com).name
     arquivo_outro = REPORTS_DIR / f"predicoes_{args.split}_{tag_outro}.parquet"
     if not arquivo_outro.exists():
@@ -321,6 +323,7 @@ if args.comparar_com:
 
 # avaliacao das noticias ambiguas (2 ou mais categorias), que nao entraram em treino, validacao nem teste
 if args.ambiguas:
+
     ambiguas = df[df["n_categorias"] > 1].reset_index(drop=True)
     ambiguas["entrada"] = ambiguas["titulo"] + " " + ambiguas["texto"]
     entradas_amb = ambiguas["entrada"].tolist()
