@@ -141,6 +141,10 @@ python baseline.py
 
 O baseline usa apenas notícias com uma categoria e concatena título e corpo. O TF-IDF representa cada notícia por pesos de palavras; a regressão logística multinomial escolhe uma entre as nove categorias. O pipeline atual usa palavras individuais, ignora termos raros ou quase universais e pondera as classes durante o treino. O modelo treinado é salvo em `models/baseline.joblib`.
 
+**Como interpretar o baseline:** TF-IDF cria um vetor numérico esparso por notícia, com uma posição por termo do vocabulário. Termos frequentes na notícia, mas menos comuns na coleção, tendem a receber pesos maiores. A regressão logística aprende pesos para associar esses vetores às nove classes; com o solver padrão `lbfgs`, a formulação é multinomial, usando softmax para produzir probabilidades que somam 1. É um método relativamente rápido e simples de inspecionar, mas não representa a ordem e o contexto das palavras como um modelo Transformer.
+
+O baseline atual usa unigramas (`ngram_range=(1, 1)`), `C=10`, `class_weight="balanced"`, `min_df=2` e `max_df=0.9`. O ajuste experimental em `tests/tune_baseline.py` encontrou uma configuração diferente como melhor na validação cruzada; ela não foi aplicada automaticamente ao `baseline.py`.
+
 ### Ajuste experimental do baseline
 
 ```bash
@@ -164,6 +168,10 @@ python train.py --max-length 512 --batch-size 4 --grad-acc 2 --saida models/bert
 ```
 
 O script parte do modelo pré-treinado `neuralmind/bert-base-portuguese-cased` e faz fine-tuning em nove classes. Treina por três épocas, avalia na validação ao final de cada época e conserva os pesos da época com melhor F1 macro. Notícias acima do limite de tokens são truncadas.
+
+**Como o BERT difere:** o baseline trata cada termo como uma característica independente; o BERT constrói representações contextualizadas, em que a interpretação de uma palavra depende das demais palavras ao redor. No fine-tuning, o modelo pré-treinado e a camada final de classificação são ajustados para as categorias deste projeto. Os logits da camada final são convertidos em probabilidades por softmax, e o modelo escolhe a classe de maior probabilidade.
+
+O limite de 256 ou 512 controla quantos tokens de cada entrada podem ser lidos. O modelo de 512 tokens pode usar mais conteúdo de notícias longas, mas demanda mais memória e tempo. Para manter um lote efetivo de oito exemplos nessa variante, o comando usa `--batch-size 4 --grad-acc 2`.
 
 Para testar o fluxo rapidamente, sem salvar o modelo:
 
@@ -211,6 +219,17 @@ Nesse modo, uma previsão é considerada compatível quando sua categoria está 
 
 O `evaluate.py` calcula accuracy, F1 macro e métricas por categoria; compara erros dos dois modelos; analisa resultados por formato, ano e tamanho; e gera matriz de confusão, previsões Parquet, CSV de métricas e relatórios Markdown em `reports/`.
 
+### O que significam as métricas
+
+- **Accuracy (acurácia):** proporção de notícias classificadas corretamente. É fácil de entender, mas pode esconder desempenho fraco em categorias menos frequentes.
+- **Precisão:** entre as notícias previstas como uma categoria, quantas realmente pertencem a ela. Precisão baixa indica muitos falsos positivos para essa classe.
+- **Recall (revocação):** entre as notícias que realmente pertencem a uma categoria, quantas o modelo encontrou. Recall baixo indica muitos falsos negativos.
+- **F1:** média harmônica entre precisão e recall; diminui se uma das duas métricas for baixa.
+- **F1 macro:** calcula o F1 separadamente para cada categoria e tira a média simples. Cada categoria tem o mesmo peso, independentemente do número de exemplos. Por isso, é a principal métrica usada para escolher a melhor época do BERT e a configuração do GridSearch.
+- **Suporte:** número de exemplos reais de cada classe na divisão avaliada.
+
+Na matriz de confusão normalizada por linha, a diagonal corresponde ao recall de cada categoria; as células fora da diagonal mostram para quais classes os exemplos foram confundidos. O relatório também compara previsões pareadas: o teste exato de McNemar considera especificamente os exemplos em que dois modelos discordam e verifica se um tende a acertar mais que o outro.
+
 ## Classificar uma notícia
 
 O modelo padrão de previsão é `models/bert_512`. Rode o comando e informe título e texto quando solicitado:
@@ -252,6 +271,26 @@ Na execução analisada durante o desenvolvimento:
 A base limpa contém nove categorias. Nela, 4.570 notícias têm uma única categoria e 1.816 têm múltiplas categorias. O treino principal utiliza as 4.570 de categoria única.
 
 Os números acima descrevem os arquivos locais analisados e podem mudar se a fonte do dataset for atualizada ou se as regras de processamento forem alteradas.
+
+### Desempenho registrado
+
+As tabelas abaixo foram recalculadas a partir dos arquivos de previsões salvos em `reports/`. A validação contém 686 notícias; o teste também contém 686. Os valores estão em porcentagem.
+
+| Modelo | Divisão | Accuracy | F1 macro |
+|---|---|---:|---:|
+| Baseline TF-IDF + regressão logística | Validação | 73,3% | 71,9% |
+| BERT, limite de 256 tokens | Validação | 76,1% | 74,9% |
+| BERT, limite de 512 tokens | Validação | **79,7%** | **78,2%** |
+| Baseline TF-IDF + regressão logística | Teste | 71,6% | 70,5% |
+| BERT, limite de 512 tokens | Teste | **77,0%** | **75,1%** |
+
+Na validação, o BERT de 512 tokens superou o de 256 em 3,7 pontos percentuais de accuracy e 3,3 pontos de F1 macro. As previsões dos dois BERTs diferiram em 107 das 686 notícias; 55 foram acertadas somente pela versão de 512, contra 30 acertadas somente pela de 256. O teste pareado de McNemar registrou `p = 0,0088`. É evidência favorável à variante de 512 nesta comparação, mas o resultado da validação é exploratório, pois também foi usado para escolher entre modelos.
+
+No teste reservado, o BERT de 512 tokens também ficou acima do baseline nos resultados registrados: 77,0% contra 71,6% de accuracy, e 75,1% contra 70,5% de F1 macro. O teste deve continuar sendo tratado como avaliação final, não como conjunto para ajustar parâmetros.
+
+O ganho agregado não significa que o BERT vence em toda classe. No teste, por exemplo, o F1 da categoria `sociedade` foi 0,349 para o BERT de 512 tokens e 0,417 para o baseline. Consulte `reports/metricas_por_classe_teste_bert_512.csv` para os resultados completos por categoria.
+
+O tuning do baseline registrou F1 macro médio de validação cruzada de 0,714 para sua melhor configuração testada (`(1, 2)` n-gramas, `C=100`, classes balanceadas). Esse número vem de folds dentro do conjunto de treino e não deve ser comparado diretamente ao F1 da validação externa na tabela.
 
 ## Limitações e reprodução
 
