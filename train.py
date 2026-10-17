@@ -153,11 +153,11 @@ else:
 # definindo as configuracoes do treinamento do modelo
 training_args = TrainingArguments(
     output_dir=str(CHECKPOINTS_DIR),
-    num_train_epochs=EPOCAS,
-    per_device_train_batch_size=args.batch_size,
+    num_train_epochs=EPOCAS, # passafens cmpletas pelo conjunto de treino
+    per_device_train_batch_size=args.batch_size, # noticias processadas antes de acumular gradiente
     gradient_accumulation_steps=args.grad_acc, # soma o gradiente de varios mini-lotes antes de atualizar os pesos
     per_device_eval_batch_size=16 if MAX_LENGTH <= 256 else 8, # na validacao, nao há atualizacao dos pesos do modelo
-    learning_rate=2e-5,
+    learning_rate=2e-5, # tamanho dos passos para ajustas os pesos do modelo
     weight_decay=0.01, # regularizacao L2, penaliza valores muito grandes para evitar overfitting
     eval_strategy="epoch",
     save_strategy="no" if args.smoke else "epoch",
